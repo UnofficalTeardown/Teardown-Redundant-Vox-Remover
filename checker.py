@@ -3,28 +3,67 @@ import xml.etree.ElementTree as ET
 import tkinter as tk
 from tkinter import filedialog
 import tkinter.font as TkFont
+import math
+
+
+
+
+
+
+def convert_size(size_bytes):
+    if size_bytes == 0:
+        return "0B"
+    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return "%s %s" % (s, size_name[i])
+
+instance_vox_files = set()
+
+
+
 
 def find_redundant_vox_files(xml_filepath, mod_folderpath):
     tree = ET.parse(xml_filepath)
     root = tree.getroot()
 
+    xml_vox_files = set()
+
+    
     
 
-    xml_vox_files = set()
+
     for elem in root.iter():
         for k, v in elem.attrib.items():
-            if k == "brush" or k == "file":
+            if k == "brush" or k == "file" or k == "script":
                 if v.startswith("MOD/"):
                     filename = v.split("/")[-1]
-                    if filename.endswith(".vox"):
+                    if filename.endswith(".vox") or filename.endswith(".lua"):
                         xml_vox_files.add(filename)
+                    elif v.endswith(".xml"):
+                        xml_vox_files.add(filename)
+                        
 
+                        instance_xml_path = os.path.join(os.path.dirname(xml_filepath), v.replace("MOD/", ""))
+                        if os.path.exists(instance_xml_path):
+                            instance_xml = ET.parse(instance_xml_path)
+                            instance_root = instance_xml.getroot()
+                            for instance_elem in instance_root.iter():
+                                for instance_k, instance_v in instance_elem.attrib.items():
+                                    if instance_k == "brush" or instance_k == "file" or instance_k == "script":
+                                        if instance_v.startswith("MOD/"):
+                                            instance_filename = instance_v.split("/")[-1]
+                                            if instance_filename.endswith(".vox") or instance_filename.endswith(".lua"):
+                                                xml_vox_files.add(instance_filename)
+                                                instance_vox_files.add(instance_filename)
+                    
 
     redundant_files = []
     for dirpath, dirnames, filenames in os.walk(mod_folderpath):
         for filename in filenames:
-            if filename.endswith(".vox"):
-                if filename not in xml_vox_files:
+            if filename.endswith(".vox") or filename.endswith(".lua") or filename.endswith(".xml"):
+                if filename not in xml_vox_files and filename != "main.xml" and filename != os.path.basename(xml_filepath):
                     redundant_files.append(os.path.join(dirpath, filename))
 
     return redundant_files
@@ -34,6 +73,8 @@ class Application(tk.Frame):
         super().__init__(master)
         self.master = master
         
+        self.WastedSize = 0
+        self.masterCount = 0
 
         self.xml_label = tk.Label(master, text="XML File:")
         self.xml_label.grid(row=0, column=0, sticky="w", padx=10, pady=10)
@@ -63,21 +104,22 @@ class Application(tk.Frame):
         self.find_button = tk.Button(master, text="Clear List", command=self.clear_all, fg="#ff9933")
         self.find_button.grid(row=2, column=2, padx=10, pady=10)
 
-
+        self.count = tk.Label(master, text="0 Files\nWasted Space 0Mb", anchor="w", width=20)
+        self.count.grid(row=3, column=0, padx=0, pady=0)
+ 
         self.aboutText = tk.Label(master, text="Created By Eli\nelir#0001\n\nDeleted Files are moved\n to 'TD_Redundant'.")
-        self.aboutText.grid(row=7, column=0, padx=10, pady=10)
+        self.aboutText.grid(row=8, column=0, padx=10, pady=10)
 
         self.aboutText = tk.Text(master,height=10,width=45)
-        self.aboutText.grid(row=7, column=1, padx=10, pady=10)
+        self.aboutText.grid(row=8, column=1, padx=10, pady=10)
         self.aboutText.insert(tk.END,"No Software Warranty. User acknowledges and\nagrees that the use of the Software is at\nUser’s sole risk. The Software and related\ndocumentation are provided “AS IS” and\nwithout any warranty of any kind and Author\nEXPRESSLY DISCLAIMS ALL WARRANTIES, EXPRESS\nOR IMPLIED, INCLUDING, BUT NOT LIMITED TO,\nTHE IMPLIED WARRANTIES OF MERCHANTABILITY AND\nFITNESS FOR A PARTICULAR PURPOSE.")
         self.aboutText.config(state=tk.DISABLED)
-        #self.wText = tk.Label( root, text="No Software Warranty. User acknowledges and agrees that the use of the Software is at User’s sole risk. The Software and related documentation are provided “AS IS” and without any warranty of any kind and Author EXPRESSLY DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.")
-        #self.wText.grid(row=8, column=0, padx=10, pady=10)
+
         
 
 
         self.listframe = tk.Frame(master)
-        self.listframe.grid(row=3, rowspan=3, column=0, columnspan=3, padx=10, pady=10, sticky="nsew")
+        self.listframe.grid(row=4, rowspan=3, column=0, columnspan=3, padx=10, pady=10, sticky="nsew")
         self.listframe.grid_propagate(False)
 
 
@@ -119,8 +161,10 @@ class Application(tk.Frame):
 
     redundant_files = []
 
+
+    
     def find_redundant_files(self):
-        # Get the file paths
+
         xml_filepath = self.xml_entry.get()
         mod_folderpath = self.mod_entry.get()
 
@@ -128,12 +172,25 @@ class Application(tk.Frame):
             tk.messagebox.showerror(title="TD Redundant Checker Error", message="Error 02: XML Filepath or Mod Folderpath was left empty")
         else:
 
-            # Find the redundant files
+
             self.redundant_files = find_redundant_vox_files(xml_filepath, mod_folderpath)
 
-            # Update the listbox
+
             self.listbox.delete(0, tk.END)
+
             for filepath in self.redundant_files:
+
+                
+                self.WastedSize = self.WastedSize + os.path.getsize(filepath)
+
+                self.masterCount = self.masterCount + 1
+                self.count.configure(text=str(self.masterCount) + " Files" + "\nWasted Space " + convert_size(self.WastedSize) + "", anchor="w", width=20)
+
+                if filepath in instance_vox_files:
+                    frominst = True
+                else:
+                    frominst = False
+
                 item = tk.Frame(self.listbox)
                 item.pack(side="top", fill="both")
                 item.filename = filepath
@@ -148,6 +205,7 @@ class Application(tk.Frame):
                 bold_font = TkFont.Font(**default_font.configure())
                 bold_font.configure(weight="bold")
                 filename_label.tag_configure("bold", font=bold_font)
+                filename_label.tag_configure("boldright", font=bold_font, justify='right')
                 
             
 
@@ -155,6 +213,24 @@ class Application(tk.Frame):
                 filename_label.insert(tk.END,textPrefix)
                 filename_label.insert(tk.END,textLocalPathLocal.replace("\\","/"))
                 filename_label.insert(tk.END,textLocalPathItemName.replace("\\","/"),"bold")
+
+                filename_label.tag_configure("SCRIPT",  background="#FFF",foreground="#ff9c33")
+                filename_label.tag_configure("XML",  background="#FFF",foreground="#3377ff")
+                filename_label.tag_configure("VOX",  background="#FFF",foreground="#ff33a3")
+
+
+
+                if textLocalPathItemName.endswith('.lua'):
+                    filename_label.insert(tk.END,"\nSCRIPT","SCRIPT")
+                if textLocalPathItemName.endswith('.xml'):
+                    filename_label.insert(tk.END,"\nXML INSTANCE","XML")
+                if frominst == True:
+                    filename_label.insert(tk.END,"\nVOXFILE FROM INSTANCE","VOX")
+                elif textLocalPathItemName.endswith('.vox'):
+                    filename_label.insert(tk.END,"\nVOXFILE","VOX")
+                filename_label.insert(tk.END,"   " + convert_size(os.path.getsize(filepath)),"\tboldright")
+
+
 
 
                 filename_label.config(state=tk.DISABLED)
@@ -195,7 +271,10 @@ class Application(tk.Frame):
         self.listbox.destroy()
         self.listbox = tk.Listbox(self.listbox_frame, width=100, height=800)
         self.listbox.pack(side="left", fill="both", expand=True)
-
+        self.masterCount = 0
+        instance_vox_files.clear()
+        self.WastedSize = 0
+        self.count.configure(text=str(self.masterCount) + " Files" + "\nWasted Space " + convert_size(self.WastedSize) + "", anchor="w", width=20)
 
        
 
@@ -206,23 +285,31 @@ class Application(tk.Frame):
         isExist = os.path.exists(self.mod_entry.get() + "/TD_REDUNDANT/")
         if not isExist:
             os.makedirs(self.mod_entry.get() + "/TD_REDUNDANT/")
+        self.WastedSize = self.WastedSize - os.path.getsize(filepath)
+
         os.rename(filepath, self.mod_entry.get() + "/TD_REDUNDANT/" + os.path.basename(filepath))
+        self.count.configure(text=str(self.masterCount) + " Files" + "\nWasted Space " + convert_size(self.WastedSize) + "", anchor="w", width=20)
+        
         item.destroy()
         self.list_items.remove(item)
+        self.masterCount = self.masterCount - 1
 
     def clear_all(self):
         self.redundant_files = []
-        self.xml_entry.delete(0, tk.END)
-        self.mod_entry.delete(0, tk.END)
         self.listbox.destroy()
         self.listbox = tk.Listbox(self.listbox_frame, width=100, height=800)
         self.listbox.pack(side="left", fill="both", expand=True)
+        self.masterCount = 0
+
+        instance_vox_files.clear()
+        self.WastedSize = 0
+        self.count.configure(text=str(self.masterCount) + " Files" + "\nWasted Space " + convert_size(self.WastedSize) + "", anchor="w", width=20)
         
 
 
 root = tk.Tk()
 root.wm_title('TD Redundant Checker')
-root.geometry("635x750")
+root.geometry("635x760")
 root.resizable(False,False)
 app = Application(master=root)
 
